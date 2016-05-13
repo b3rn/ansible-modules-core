@@ -36,6 +36,12 @@ options:
         required: false
         description:
             - Optional I(GID) to set for the group.
+    force:
+        required: false
+        default: false
+        choices: [ "yes", "no" ]
+        description:
+            - If a group with the given GID exists, rename it to the name given.
     state:
         required: false
         default: "present"
@@ -85,6 +91,7 @@ class Group(object):
         self.name       = module.params['name']
         self.gid        = module.params['gid']
         self.system     = module.params['system']
+        self.force      = module.params['force']
 
     def execute_command(self, cmd):
         return self.module.run_command(cmd)
@@ -112,11 +119,18 @@ class Group(object):
                 if kwargs[key] is not None and info[2] != int(kwargs[key]):
                     cmd.append('-g')
                     cmd.append(kwargs[key])
+            if key == 'force':
+                if kwargs[key] is True:
+                    curname = grp.getgrgid(kwargs[gid])[0]
+                    cmd.append('-n')
+                    cmd.append(self.name)
+                    cmd.append(curname)
         if len(cmd) == 1:
             return (None, '', '')
         if self.module.check_mode:
             return (0, '', '')
-        cmd.append(self.name)
+        if kwargs['force'] is False:
+            cmd.append(self.name)
         return self.execute_command(cmd)
 
     def group_exists(self):
@@ -383,6 +397,7 @@ def main():
             name=dict(required=True, type='str'),
             gid=dict(default=None, type='str'),
             system=dict(default=False, type='bool'),
+            force=dict(default=False, type='bool'),
         ),
         supports_check_mode=True
     )
@@ -410,8 +425,10 @@ def main():
                 module.fail_json(name=group.name, msg=err)
 
     elif group.state == 'present':
+        if group.force == True:
+            (rc, out, err) = group.group_mod(gid=group.gid, newname=group.name, force=group.force)
 
-        if not group.group_exists():
+        elif not group.group_exists():
             if module.check_mode:
                 module.exit_json(changed=True)
             (rc, out, err) = group.group_add(gid=group.gid, system=group.system)
